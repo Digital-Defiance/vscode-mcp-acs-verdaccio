@@ -38,12 +38,23 @@ export class StatusViewProvider implements IStatusViewProvider {
   private readonly _serverManager: IServerManager;
   private readonly _stateSubscription: vscode.Disposable;
   private _packageCount: number = 0;
+  private _uptimeTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(serverManager: IServerManager) {
     this._serverManager = serverManager;
-    this._stateSubscription = this._serverManager.onDidChangeState(() => {
+    this._stateSubscription = this._serverManager.onDidChangeState((state) => {
       this.refresh();
+      this._manageUptimeTimer(state);
     });
+  }
+
+  private _manageUptimeTimer(state: string): void {
+    if (state === 'running' && !this._uptimeTimer) {
+      this._uptimeTimer = setInterval(() => this.refresh(), 10_000);
+    } else if (state !== 'running' && this._uptimeTimer) {
+      clearInterval(this._uptimeTimer);
+      this._uptimeTimer = undefined;
+    }
   }
 
   refresh(): void {
@@ -75,9 +86,10 @@ export class StatusViewProvider implements IStatusViewProvider {
       case 'running': {
         const items: StatusItem[] = [new StatusItem('Status', 'Running')];
 
+        const host = this._serverManager.host;
         const port = this._serverManager.port;
         if (port !== undefined) {
-          items.push(new StatusItem('Address', `0.0.0.0:${port}`));
+          items.push(new StatusItem('Address', `${host ?? '0.0.0.0'}:${port}`));
         }
 
         const startTime = this._serverManager.startTime;
@@ -103,6 +115,10 @@ export class StatusViewProvider implements IStatusViewProvider {
   }
 
   dispose(): void {
+    if (this._uptimeTimer) {
+      clearInterval(this._uptimeTimer);
+      this._uptimeTimer = undefined;
+    }
     this._stateSubscription.dispose();
     this._onDidChangeTreeData.dispose();
   }

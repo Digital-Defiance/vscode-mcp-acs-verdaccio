@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockShowWarningMessage } = vi.hoisted(() => ({
+const { mockShowWarningMessage, mockEnv } = vi.hoisted(() => ({
   mockShowWarningMessage: vi.fn(),
+  mockEnv: { remoteName: undefined as string | undefined },
 }));
 
 vi.mock('vscode', () => {
@@ -16,6 +17,7 @@ vi.mock('vscode', () => {
   }
   return {
     EventEmitter: MockVscodeEventEmitter,
+    env: mockEnv,
     window: { showWarningMessage: mockShowWarningMessage },
   };
 });
@@ -104,8 +106,19 @@ describe('ServerManager (in-process)', () => {
     expect(states).toEqual(['starting', 'running', 'stopped']);
   });
 
-  it('parsePortFromConfig returns 4873 as default', () => {
-    const port = (sm as any)._parsePortFromConfig();
-    expect(port).toBe(4873);
+  it('parseListenAddress returns 0.0.0.0 default when local (no remoteName)', () => {
+    mockEnv.remoteName = undefined;
+    const result = (sm as any)._parseListenAddress();
+    expect(result).toEqual({ host: '0.0.0.0', port: 4873 });
+  });
+
+  it('parseListenAddress returns 127.0.0.1 default when in devcontainer', () => {
+    mockEnv.remoteName = 'dev-container';
+    try {
+      const result = (sm as any)._parseListenAddress();
+      expect(result).toEqual({ host: '127.0.0.1', port: 4873 });
+    } finally {
+      mockEnv.remoteName = undefined;
+    }
   });
 });

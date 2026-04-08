@@ -35,6 +35,7 @@ import { ServerState } from '../types';
  */
 function createMockServerManager(overrides: {
   state?: ServerState;
+  host?: string;
   port?: number;
   startTime?: Date;
 } = {}): IServerManager & { stateListener: ((s: ServerState) => void) | undefined } {
@@ -42,6 +43,7 @@ function createMockServerManager(overrides: {
 
   return {
     state: overrides.state ?? 'stopped',
+    host: overrides.host,
     port: overrides.port,
     startTime: overrides.startTime,
     stateListener,
@@ -100,6 +102,7 @@ describe('StatusViewProvider', () => {
       const startTime = new Date(Date.now() - 3661000); // ~1h 1m 1s ago
       const mgr = createMockServerManager({
         state: 'running',
+        host: '127.0.0.1',
         port: 4873,
         startTime,
       });
@@ -110,7 +113,7 @@ describe('StatusViewProvider', () => {
 
       expect(summaries.length).toBe(6);
       expect(summaries[0]).toEqual({ label: 'Status', description: 'Running' });
-      expect(summaries[1]).toEqual({ label: 'Address', description: '0.0.0.0:4873' });
+      expect(summaries[1]).toEqual({ label: 'Address', description: '127.0.0.1:4873' });
       // Uptime is dynamic, just verify it exists and matches the format
       expect(summaries[2].label).toBe('Uptime');
       expect(summaries[2].description).toMatch(/^\d+h \d+m \d+s$/);

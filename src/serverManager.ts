@@ -7,6 +7,7 @@ export type LogFn = (message: string) => void;
 export interface IServerManager extends vscode.Disposable {
   readonly state: ServerState;
   readonly onDidChangeState: vscode.Event<ServerState>;
+  readonly host: string | undefined;
   readonly port: number | undefined;
   readonly startTime: Date | undefined;
   start(): Promise<void>;
@@ -18,7 +19,7 @@ const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 5000;
 
 export class ServerManager implements IServerManager {
   private _info: ServerInfo = {
-    state: 'stopped', port: undefined, startTime: undefined,
+    state: 'stopped', host: undefined, port: undefined, startTime: undefined,
     pid: undefined, lastError: undefined,
   };
 
@@ -36,6 +37,7 @@ export class ServerManager implements IServerManager {
   }
 
   get state(): ServerState { return this._info.state; }
+  get host(): string | undefined { return this._info.host; }
   get port(): number | undefined { return this._info.port; }
   get startTime(): Date | undefined { return this._info.startTime; }
   get pid(): number | undefined { return this._info.pid; }
@@ -54,7 +56,7 @@ export class ServerManager implements IServerManager {
     }
 
     const configPath = this._configManager.getConfigPath();
-    const port = this._parsePortFromConfig();
+    const { host, port } = this._parseListenAddress();
 
     // Kill any existing process on the target port
     // Not needed for in-process mode — just retry if port is busy
@@ -116,11 +118,12 @@ export class ServerManager implements IServerManager {
           attempts++;
           this._log(`Listen attempt ${attempts} on port ${port}...`);
 
-          this._server = app.listen(port, '0.0.0.0', () => {
+          this._server = app.listen(port, host, () => {
+            this._info.host = host;
             this._info.port = port;
             this._info.startTime = new Date();
             this._info.pid = process.pid;
-            this._log(`Verdaccio listening on 0.0.0.0:${port}`);
+            this._log(`Verdaccio listening on ${host}:${port}`);
             this._setState('running');
             resolve();
           });
@@ -208,20 +211,36 @@ export class ServerManager implements IServerManager {
   }
 
   private _resetInfo(): void {
+    this._info.host = undefined;
     this._info.port = undefined;
     this._info.startTime = undefined;
     this._info.pid = undefined;
     this._info.lastError = undefined;
   }
 
-  private _parsePortFromConfig(): number {
+  private _defaultHost(): string {
+    // In devcontainer/remote environments, bind to loopback so each container
+    // stays isolated. On local machines, bind to all interfaces.
+    return vscode.env.remoteName ? '127.0.0.1' : '0.0.0.0';
+  }
+
+  private _parseListenAddress(): { host: string; port: number } {
+    const defaultHost = this._defaultHost();
     try {
       const fs = require('fs');
       const content = fs.readFileSync(this._configManager.getConfigPath(), 'utf-8');
-      const match = content.match(/listen[:\s]+['"]?[^'"\s]*?:(\d+)/);
-      if (match) { return parseInt(match[1], 10); }
-    } catch { /* use default */ }
-    return 4873;
+      // Match patterns like: listen: "0.0.0.0:4873" or listen: 127.0.0.1:4873
+      const match = content.match(/listen[:\s]+['"]?([^'"\s:]+):(\d+)/);
+      if (match) {
+        return { host: match[1], port: parseInt(match[2], 10) };
+      }
+      // Port-only pattern: listen: 4873
+      const portOnly = content.match(/listen[:\s]+['"]?(\d+)/);
+      if (portOnly) {
+        return { host: defaultHost, port: parseInt(portOnly[1], 10) };
+      }
+    } catch { /* use defaults */ }
+    return { host: defaultHost, port: 4873 };
   }
 
 }

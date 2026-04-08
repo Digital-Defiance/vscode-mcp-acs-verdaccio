@@ -2,6 +2,7 @@ export type ServerState = "stopped" | "starting" | "running" | "error";
 
 export interface ServerInfo {
   state: ServerState;
+  host: string | undefined;
   port: number | undefined;
   startTime: Date | undefined;
   pid: number | undefined;
