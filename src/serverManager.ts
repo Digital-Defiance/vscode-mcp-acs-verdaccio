@@ -113,12 +113,16 @@ export class ServerManager implements IServerManager {
       await new Promise<void>((resolve, reject) => {
         let attempts = 0;
         const maxAttempts = 3;
+        let settled = false;
 
         const tryListen = () => {
           attempts++;
           this._log(`Listen attempt ${attempts} on port ${port}...`);
 
-          this._server = app.listen(port, host, () => {
+          const server = app.listen(port, host, () => {
+            if (settled) { try { server.close(); } catch { /* ignore */ } return; }
+            settled = true;
+            this._server = server;
             this._info.host = host;
             this._info.port = port;
             this._info.startTime = new Date();
@@ -128,12 +132,15 @@ export class ServerManager implements IServerManager {
             resolve();
           });
 
-          this._server.on('error', (err: any) => {
-            this._server = undefined;
+          server.on('error', (err: any) => {
+            if (settled) { return; }
+            try { server.close(); } catch { /* ignore */ }
             if (err.code === 'EADDRINUSE' && attempts < maxAttempts) {
               this._log(`Port ${port} busy, retrying in 2s... (attempt ${attempts}/${maxAttempts})`);
               setTimeout(tryListen, 2000);
             } else {
+              settled = true;
+              this._server = undefined;
               if (err.code === 'EADDRINUSE') {
                 this._info.lastError = `Port ${port} is in use. Run: kill $(lsof -ti:${port})`;
                 this._log(`Port ${port} still busy after ${maxAttempts} attempts`);
